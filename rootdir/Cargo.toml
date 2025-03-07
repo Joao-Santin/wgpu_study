@@ -1,0 +1,9 @@
+[package]
+name = "rootdir"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+pollster = "0.3"
+tutorial1_window = {path = "../tutorial1_window"}
+tutorial2_surface = {path = "../tutorial2-surface"}

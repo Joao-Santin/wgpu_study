@@ -1,0 +1,5 @@
+[workspace]
+
+resolver="2"
+members = ["rootdir", "tutorial1_window", "tutorial2-surface"]
+default-members=["rootdir"]
