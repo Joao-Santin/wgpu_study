@@ -16,12 +16,13 @@ struct State<'a> {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
-    clear_color: wgpu::Color,
-    // The window must be declared after the surface so
-    // it gets dropped after it as the surface contains
-    // unsafe references to the window's resources.
+    // NEW!
+    render_pipeline: wgpu::RenderPipeline,
+    challenge_render_pipeline : wgpu::RenderPipeline,
+    use_color: bool,
     window: &'a Window,
 }
+
 impl<'a> State<'a> {
     async fn new(window: &'a Window) -> State<'a> {
         let size = window.inner_size();
@@ -61,8 +62,7 @@ impl<'a> State<'a> {
                     },
                     memory_hints: Default::default(),
                 },
-                // Some(&std::path::Path::new("trace")), // Trace path
-                None,
+                None, // Trace path
             )
             .await
             .unwrap();
@@ -84,22 +84,133 @@ impl<'a> State<'a> {
             height: size.height,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
-            desired_maximum_frame_latency: 2,
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
-        let clear_color = wgpu::Color::BLACK;
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent::REPLACE,
+                        alpha: wgpu::BlendComponent::REPLACE,
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
+                // or Features::POLYGON_MODE_POINT
+                polygon_mode: wgpu::PolygonMode::Fill,
+                // Requires Features::DEPTH_CLIP_CONTROL
+                unclipped_depth: false,
+                // Requires Features::CONSERVATIVE_RASTERIZATION
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            // If the pipeline will be used with a multiview render pass, this
+            // indicates how many array layers the attachments will have.
+            multiview: None,
+            // Useful for optimizing shader compilation on Android
+            cache: None,
+            
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Challenge Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("challenge.wgsl").into()),
+        });
+
+        let challenge_render_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                // If the pipeline will be used with a multiview render pass, this
+                // indicates how many array layers the attachments will have.
+                multiview: None,
+                cache: None,
+            });
+
+        let use_color = true;
 
         Self {
             surface,
             device,
             queue,
-            config,
-            clear_color,
             size,
+            config,
+            render_pipeline,
+            //esse é do desafio mermao
+            challenge_render_pipeline,
+            use_color,
             window,
         }
     }
-    fn window(&self) -> &Window {
+
+    pub fn window(&self) -> &Window {
         &self.window
     }
 
@@ -112,18 +223,22 @@ impl<'a> State<'a> {
         }
     }
 
+    #[allow(unused_variables)]
     fn input(&mut self, event: &WindowEvent) -> bool {
-        match event{
-            WindowEvent::CursorMoved { position, .. } => {
-                self.clear_color = wgpu::Color{
-                    r: position.x as f64 / self.size.width as f64,
-                    g: position.y as f64 / self.size.height as f64,
-                    b: 1.0,
-                    a: 1.0,
-                };
+        match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent{
+                        state,
+                        physical_key: PhysicalKey::Code(KeyCode::Space),
+                        ..
+                },
+            ..
+        } => {
+                self.use_color = *state == ElementState::Released;
                 true
-        }
-        _ => false,
+            }
+            _ => false,
         }
     }
 
@@ -142,13 +257,18 @@ impl<'a> State<'a> {
             });
 
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.clear_color),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.8,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -156,6 +276,13 @@ impl<'a> State<'a> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            render_pass.set_pipeline(if self.use_color{
+                &self.render_pipeline
+            }else{
+                &self.challenge_render_pipeline
+                });
+            render_pass.draw(0..3, 0..1);
         }
 
         self.queue.submit(iter::once(encoder.finish()));
@@ -164,12 +291,13 @@ impl<'a> State<'a> {
         Ok(())
     }
 }
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Info).expect("Couldn't initialize logger");
+            console_log::init_with_level(log::Level::Warn).expect("Could't initialize logger");
         } else {
             env_logger::init();
         }
@@ -183,6 +311,7 @@ pub async fn run() {
         // Winit prevents sizing with CSS, so we have to set
         // the size manually when on web.
         use winit::dpi::PhysicalSize;
+        let _ = window.request_inner_size(PhysicalSize::new(450, 400));
 
         use winit::platform::web::WindowExtWebSys;
         web_sys::window()
@@ -194,8 +323,6 @@ pub async fn run() {
                 Some(())
             })
             .expect("Couldn't append canvas to document body.");
-
-        let _ = window.request_inner_size(PhysicalSize::new(450, 400));
     }
 
     // State::new uses async code, so we're going to wait for it to finish
@@ -210,7 +337,6 @@ pub async fn run() {
                     window_id,
                 } if window_id == state.window().id() => {
                     if !state.input(event) {
-                        // UPDATED!
                         match event {
                             WindowEvent::CloseRequested
                             | WindowEvent::KeyboardInput {
@@ -223,7 +349,6 @@ pub async fn run() {
                                 ..
                             } => control_flow.exit(),
                             WindowEvent::Resized(physical_size) => {
-                                log::info!("physical_size: {physical_size:?}");
                                 surface_configured = true;
                                 state.resize(*physical_size);
                             }

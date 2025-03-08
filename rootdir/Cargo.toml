@@ -7,3 +7,5 @@ edition = "2024"
 pollster = "0.3"
 tutorial1_window = {path = "../tutorial1_window"}
 tutorial2_surface = {path = "../tutorial2-surface"}
+tutorial3_pipeline = {path = "../tutorial3_pipeline"}
+tutorial3_pipeline_challenge = {path = "../tutorial3_pipeline_challenge"}
