@@ -1,5 +1,5 @@
 [workspace]
 
 resolver="2"
-members = ["rootdir", "tutorial1_window", "tutorial2-surface", "tutorial3_pipeline", "tutorial3_pipeline_challenge"]
+members = ["rootdir", "tutorial1_window", "tutorial2-surface", "tutorial3_pipeline", "tutorial3_pipeline_challenge", "widgets"]
 default-members=["rootdir"]
